@@ -1,6 +1,6 @@
 ﻿# IBGE Analytics - PIB e Indicadores por Paises
 
-Pipeline de dados com API publica do IBGE, ingestao em PostgreSQL e transformacoes com dbt, com portal interativo em Streamlit.
+Pipeline de dados com coleta via API publica do IBGE, persistencia em PostgreSQL, modelagem com dbt e visualizacao interativa em Streamlit.
 
 ## Escopo Atual
 
@@ -130,7 +130,7 @@ Set-Location ..
 
 ## Portal Web (Portfolio)
 
-O portal esta organizado em 2 paginas principais:
+O portal esta organizado em 3 paginas:
 
 - Dados Gerais:
    - KPIs consolidados no ano selecionado (PIB total, PIB per capita medio, YoY medio, IDH medio, habitantes)
@@ -141,12 +141,16 @@ O portal esta organizado em 2 paginas principais:
    - Serie anual para PIB, PIB per capita, YoY, educacao, saude, expectativa de vida, IDH e habitantes
    - Modo de rotulos: reduzidos ou completos
    - Controle de tamanho da fonte dos rotulos
+- Operacoes:
+   - Execucao local de carga raw e comandos dbt (seed, run, test, docs)
+   - Exibicao de logs diretamente na interface
+   - Atualizacao de cache apos cargas e transformacoes
 
 Consultas do portal usam `analytics_marts.dim_pais` e `analytics_marts.fato_indicador`.
 
 ## Prints do Portal
 
-Adicione as imagens no repositorio em `docs/screenshots/` e mantenha os nomes abaixo:
+Principais telas do dashboard:
 
 ![Dados Gerais](docs/screenshots/dados-gerais-2021.png)
 ![Análise por País](docs/screenshots/analise-por-pais-brasil-2021.png)
