@@ -149,7 +149,7 @@ Consultas do portal usam `analytics_marts.dim_pais` e `analytics_marts.fato_indi
 Adicione as imagens no repositorio em `docs/screenshots/` e mantenha os nomes abaixo:
 
 ![Dados Gerais](docs/screenshots/dados-gerais-2021.png)
-![Analise por Pais](docs/screenshots/analise-por-pais-brasil-2021.png)
+![Análise por País](docs/screenshots/analise-por-pais-brasil-2021.png)
 
 ## Observações
 
