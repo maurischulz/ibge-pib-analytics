@@ -1,0 +1,10 @@
+requests==2.31.0
+pandas==2.1.4
+psycopg2-binary==2.9.9
+dbt-postgres==1.7.0
+protobuf<5
+duckdb==0.10.0
+python-dotenv==1.0.0
+streamlit==1.43.2
+plotly==6.0.1
+SQLAlchemy==2.0.38

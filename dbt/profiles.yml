@@ -1,0 +1,13 @@
+dbt:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: localhost
+      user: ibge_user
+      password: ibge_password
+      port: 5433
+      dbname: ibge_data
+      schema: analytics
+      threads: 4
+      keepalives_idle: 0

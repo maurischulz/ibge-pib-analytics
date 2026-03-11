@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14-alpine
+    container_name: ibge_postgres
+    environment:
+      POSTGRES_USER: ibge_user
+      POSTGRES_PASSWORD: ibge_password
+      POSTGRES_DB: ibge_data
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_ibge_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "ibge_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_ibge_data:

@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: dim_pais
+    description: Dimensao de paises com continente.
+    columns:
+      - name: pais_id
+        tests:
+          - not_null
+          - unique
+      - name: pais
+        tests:
+          - not_null
+      - name: continente
+        tests:
+          - not_null
+
+  - name: dim_indicador
+    description: Dimensao de indicadores economicos e sociais.
+    columns:
+      - name: id_indicador
+        tests:
+          - not_null
+          - unique
+      - name: indicador
+        tests:
+          - not_null
+
+  - name: fato_indicador
+    description: Fato de indicadores anuais por pais.
+    columns:
+      - name: pais_id
+        tests:
+          - not_null
+      - name: indicador_id
+        tests:
+          - not_null
+      - name: ano
+        tests:
+          - not_null
+      - name: valor
+        tests:
+          - not_null

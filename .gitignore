@@ -1,0 +1,16 @@
+data/raw/
+dbt/target/
+dbt/logs/
+data/warehouse.duckdb
+postgres_ibge_data/
+__pycache__/
+*.py[cod]
+.venv/
+.venv-win/
+venv/
+.env
+.env.local
+.idea/
+.vscode/
+.DS_Store
+*.swp

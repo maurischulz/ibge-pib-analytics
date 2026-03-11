@@ -1,0 +1,32 @@
+version: 2
+
+sources:
+  - name: raw_ibge
+    description: Raw data from IBGE API (via data_loader.py)
+    tables:
+      - name: raw_pib_paises
+        description: PIB anual por pais
+        columns:
+          - name: pais
+            tests:
+              - not_null
+
+      - name: raw_indicadores_paises
+        description: Indicadores anuais por pais
+        columns:
+          - name: pais
+            tests:
+              - not_null
+          - name: indicador_id
+            tests:
+              - not_null
+          - name: ano
+            tests:
+              - not_null
+
+      - name: raw_ipca
+        description: IPCA mensal (inflação)
+        columns:
+          - name: periodo
+            tests:
+              - not_null
