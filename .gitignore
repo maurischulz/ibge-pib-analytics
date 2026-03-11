@@ -1,6 +1,8 @@
 data/raw/
 dbt/target/
 dbt/logs/
+dbt/.user.yml
+web/logs/
 data/warehouse.duckdb
 postgres_ibge_data/
 __pycache__/
