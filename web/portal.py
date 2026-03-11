@@ -1,5 +1,9 @@
 import os
+import shutil
+import subprocess
+import sys
 from importlib.util import find_spec
+from pathlib import Path
 from typing import Callable, Dict, Union
 
 import pandas as pd
@@ -46,7 +50,7 @@ st.markdown(
       }
       [data-testid="stMetricValue"] {
         color: #f5f9ff;
-                font-size: 1.25rem;
+        font-size: 1.25rem;
       }
       .stTabs [data-baseweb="tab"] {
         color: #c4d2e5;
@@ -201,6 +205,33 @@ def format_compact_currency(value: float, decimals: int = 1) -> str:
     return f"US$ {format_compact_number(value, decimals=decimals)}"
 
 
+def run_local_command(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
+    result = subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        capture_output=True,
+        text=True,
+        shell=False,
+    )
+    output = (result.stdout or "") + ("\n" + result.stderr if result.stderr else "")
+    return result.returncode, output.strip()
+
+
+def resolve_dbt_executable(project_root: Path) -> str | None:
+    dbt_in_path = shutil.which("dbt")
+    if dbt_in_path:
+        return dbt_in_path
+
+    candidates = [
+        project_root / ".venv" / "bin" / "dbt",
+        project_root / ".venv-win" / "Scripts" / "dbt.exe",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
 def with_brazil_in_top15(df: pd.DataFrame, metric_col: str) -> pd.DataFrame:
     base = df.dropna(subset=[metric_col]).sort_values(metric_col, ascending=False)
     top = base.head(15).copy()
@@ -225,7 +256,7 @@ def build_bar_chart(
     metric_col: str,
     title: str,
     label_fmt: Union[str, Callable[[float], str]],
-) -> px.bar:
+):
     data = with_brazil_in_top15(df, metric_col).copy()
     data["destaque"] = data["pais"].astype(str).str.lower().eq("brasil").map({True: "Brasil", False: "Outros"})
     if callable(label_fmt):
@@ -277,18 +308,11 @@ def build_country_year_filled_line(
     if label_mode == "Rotulos completos (todos os anos)":
         data["label"] = label_values
     else:
-        # Evita poluicao visual: rotula apenas pontos-chave (min, max e ultimo).
         key_indexes = {len(data) - 1, int(data[metric_col].idxmin()), int(data[metric_col].idxmax())}
         for idx in key_indexes:
             data.loc[idx, "label"] = label_values.loc[idx]
 
-    fig = px.line(
-        data,
-        x="ano",
-        y=metric_col,
-        title=title,
-        markers=True,
-    )
+    fig = px.line(data, x="ano", y=metric_col, title=title, markers=True)
     is_brazil = str(selected_country).strip().lower() == "brasil"
     color = "#f59e0b" if is_brazil else "#4d96c8"
     fill_color = "rgba(245, 158, 11, 0.22)" if is_brazil else "rgba(77, 150, 200, 0.22)"
@@ -330,6 +354,102 @@ def build_country_year_filled_line(
 
 
 try:
+    project_root = Path(__file__).resolve().parents[1]
+    dbt_dir = project_root / "dbt"
+    dbt_executable = resolve_dbt_executable(project_root)
+
+    with st.sidebar:
+        st.header("Navegacao")
+        page = st.radio("Pagina", ["Dados Gerais", "Analise por Pais", "Operacoes"], index=0)
+
+    if page == "Operacoes":
+        page_header(
+            "Operacoes",
+            "Executa carga e transformacoes do pipeline diretamente no portal (ambiente local).",
+        )
+        st.info("Esta pagina e customizada para este projeto. Streamlit/dbt nao trazem esse painel por padrao.")
+
+        c1, c2 = st.columns(2)
+        run_raw = c1.button("Rodar Carga Raw", use_container_width=True)
+        run_seed = c2.button("Rodar dbt seed", use_container_width=True)
+
+        c3, c4 = st.columns(2)
+        run_dbt = c3.button("Rodar dbt run", use_container_width=True)
+        run_test = c4.button("Rodar dbt test", use_container_width=True)
+
+        run_docs = st.button("Rodar dbt docs generate", use_container_width=True)
+
+        if not dbt_executable:
+            st.warning(
+                "Executavel dbt nao encontrado no ambiente atual. "
+                "Ative sua venv correta ou instale dbt-postgres."
+            )
+
+        if run_raw:
+            with st.spinner("Executando carga raw..."):
+                code, output = run_local_command([sys.executable, str(project_root / "src" / "data_loader.py")], cwd=project_root)
+            st.code(output or "Sem saida de log.", language="bash")
+            if code == 0:
+                st.success("Carga raw finalizada com sucesso.")
+                st.cache_data.clear()
+            else:
+                st.error("Falha na carga raw.")
+
+        if run_seed:
+            if not dbt_executable:
+                st.error("Falha no dbt seed: executavel dbt nao encontrado.")
+            else:
+                with st.spinner("Executando dbt seed..."):
+                    code, output = run_local_command(
+                        [dbt_executable, "seed", "--select", "country_continent_depara", "--full-refresh", "--profiles-dir", "."],
+                        cwd=dbt_dir,
+                    )
+                st.code(output or "Sem saida de log.", language="bash")
+                if code == 0:
+                    st.success("dbt seed concluido com sucesso.")
+                    st.cache_data.clear()
+                else:
+                    st.error("Falha no dbt seed.")
+
+        if run_dbt:
+            if not dbt_executable:
+                st.error("Falha no dbt run: executavel dbt nao encontrado.")
+            else:
+                with st.spinner("Executando dbt run..."):
+                    code, output = run_local_command([dbt_executable, "run", "--profiles-dir", "."], cwd=dbt_dir)
+                st.code(output or "Sem saida de log.", language="bash")
+                if code == 0:
+                    st.success("dbt run concluido com sucesso.")
+                    st.cache_data.clear()
+                else:
+                    st.error("Falha no dbt run.")
+
+        if run_test:
+            if not dbt_executable:
+                st.error("Falha no dbt test: executavel dbt nao encontrado.")
+            else:
+                with st.spinner("Executando dbt test..."):
+                    code, output = run_local_command([dbt_executable, "test", "--profiles-dir", "."], cwd=dbt_dir)
+                st.code(output or "Sem saida de log.", language="bash")
+                if code == 0:
+                    st.success("dbt test concluido com sucesso.")
+                else:
+                    st.error("Falha no dbt test.")
+
+        if run_docs:
+            if not dbt_executable:
+                st.error("Falha no dbt docs generate: executavel dbt nao encontrado.")
+            else:
+                with st.spinner("Executando dbt docs generate..."):
+                    code, output = run_local_command([dbt_executable, "docs", "generate", "--profiles-dir", "."], cwd=dbt_dir)
+                st.code(output or "Sem saida de log.", language="bash")
+                if code == 0:
+                    st.success("dbt docs generate concluido com sucesso.")
+                else:
+                    st.error("Falha no dbt docs generate.")
+
+        st.stop()
+
     base_df = load_base_data()
     if base_df.empty:
         st.warning("Sem dados para exibir no portal.")
@@ -338,12 +458,9 @@ try:
     base_df["pais"] = base_df["pais"].astype(str).str.strip().str.title()
     base_df["continente"] = base_df["continente"].fillna("Nao informado")
     wide_df = build_wide_metrics(base_df)
-
     year_options = sorted(wide_df["ano"].dropna().astype(int).unique().tolist())
 
     with st.sidebar:
-        st.header("Navegacao")
-        page = st.radio("Pagina", ["Dados Gerais", "Analise por Pais"], index=0)
         selected_year = st.selectbox("Ano", year_options, index=len(year_options) - 1)
 
     if page == "Dados Gerais":
@@ -387,12 +504,7 @@ try:
         c5.metric("Habitantes (total)", format_compact_number(latest["habitantes_total"], force_million=True))
 
         col1, col2 = st.columns(2)
-        fig_pib = build_bar_chart(
-            latest_df.dropna(subset=["pib"]),
-            "pib",
-            f"PIB - Top Paises ({selected_year})",
-            lambda v: format_compact_currency(v),
-        )
+        fig_pib = build_bar_chart(latest_df.dropna(subset=["pib"]), "pib", f"PIB - Top Paises ({selected_year})", lambda v: format_compact_currency(v))
         fig_pib_pc = build_bar_chart(
             latest_df.dropna(subset=["pib_per_capita"]),
             "pib_per_capita",
@@ -403,55 +515,29 @@ try:
         col2.plotly_chart(fig_pib_pc, use_container_width=True)
 
         col1, col2 = st.columns(2)
-        fig_yoy = build_bar_chart(
-            yoy_latest.dropna(subset=["yoy_pib_pct"]),
-            "yoy_pib_pct",
-            f"YoY de PIB (%) - Top Paises ({selected_year})",
-            "{v:.2f}%",
-        )
-        fig_edu = build_bar_chart(
-            latest_df.dropna(subset=["gastos_educacao"]),
-            "gastos_educacao",
-            f"Gastos com Educacao - Top Paises ({selected_year})",
-            "{v:.2f}%",
-        )
+        fig_yoy = build_bar_chart(yoy_latest.dropna(subset=["yoy_pib_pct"]), "yoy_pib_pct", f"YoY de PIB (%) - Top Paises ({selected_year})", "{v:.2f}%")
+        fig_edu = build_bar_chart(latest_df.dropna(subset=["gastos_educacao"]), "gastos_educacao", f"Gastos com Educacao - Top Paises ({selected_year})", "{v:.2f}%")
         col1.plotly_chart(fig_yoy, use_container_width=True)
         col2.plotly_chart(fig_edu, use_container_width=True)
 
         col1, col2 = st.columns(2)
-        fig_saude = build_bar_chart(
-            latest_df.dropna(subset=["gastos_saude"]),
-            "gastos_saude",
-            f"Gastos com Saude - Top Paises ({selected_year})",
-            "{v:.2f}%",
-        )
-        fig_vida = build_bar_chart(
-            latest_df.dropna(subset=["expectativa_vida"]),
-            "expectativa_vida",
-            f"Expectativa de Vida - Top Paises ({selected_year})",
-            "{v:.2f}",
-        )
+        fig_saude = build_bar_chart(latest_df.dropna(subset=["gastos_saude"]), "gastos_saude", f"Gastos com Saude - Top Paises ({selected_year})", "{v:.2f}%")
+        fig_vida = build_bar_chart(latest_df.dropna(subset=["expectativa_vida"]), "expectativa_vida", f"Expectativa de Vida - Top Paises ({selected_year})", "{v:.2f}")
         col1.plotly_chart(fig_saude, use_container_width=True)
         col2.plotly_chart(fig_vida, use_container_width=True)
 
         col1, col2 = st.columns(2)
-        fig_idh = build_bar_chart(
-            latest_df.dropna(subset=["idh"]),
-            "idh",
-            f"Indice de Desenvolvimento Humano (IDH) - Top Paises ({selected_year})",
-            "{v:.3f}",
-        )
-        col1.plotly_chart(fig_idh, use_container_width=True)
-
+        fig_idh = build_bar_chart(latest_df.dropna(subset=["idh"]), "idh", f"Indice de Desenvolvimento Humano (IDH) - Top Paises ({selected_year})", "{v:.3f}")
         fig_hab = build_bar_chart(
             latest_df.dropna(subset=["habitantes"]),
             "habitantes",
             f"Habitantes - Top Paises ({selected_year})",
             lambda v: format_compact_number(v, force_million=True),
         )
+        col1.plotly_chart(fig_idh, use_container_width=True)
         col2.plotly_chart(fig_hab, use_container_width=True)
 
-    else:
+    if page == "Analise por Pais":
         page_header(
             "Analise por Pais",
             "Mesmas metricas da visao geral, com foco em um pais e evolucao anual.",
@@ -460,19 +546,13 @@ try:
         with st.sidebar:
             continents = ["Todos"] + sorted(wide_df["continente"].dropna().unique().tolist())
             selected_continent = st.selectbox("Continente", continents)
-            label_mode = st.radio(
-                "Modo de rotulos",
-                ["Rotulos reduzidos (recomendado)", "Rotulos completos (todos os anos)"],
-                index=0,
-            )
+            label_mode = st.radio("Modo de rotulos", ["Rotulos reduzidos (recomendado)", "Rotulos completos (todos os anos)"], index=0)
             label_font = st.slider("Fonte dos rotulos", min_value=8, max_value=13, value=10, step=1)
 
         if selected_continent == "Todos":
             country_options = sorted(wide_df["pais"].dropna().unique().tolist())
         else:
-            country_options = sorted(
-                wide_df[wide_df["continente"] == selected_continent]["pais"].dropna().unique().tolist()
-            )
+            country_options = sorted(wide_df[wide_df["continente"] == selected_continent]["pais"].dropna().unique().tolist())
 
         if not country_options:
             st.warning("Sem paises para o continente selecionado.")
@@ -497,101 +577,27 @@ try:
         c4.metric("IDH", f"{(latest['idh'] if pd.notna(latest['idh']) else 0):.3f}")
         c5.metric("Habitantes", format_compact_number(latest["habitantes"], force_million=True))
 
-        fig_pib_country = build_country_year_filled_line(
-            country_df,
-            "pib",
-            f"PIB - {selected_country}",
-            lambda v: format_compact_currency(v),
-            selected_country,
-            label_mode=label_mode,
-            text_size=label_font,
-        )
-        if fig_pib_country is not None:
-            st.plotly_chart(fig_pib_country, use_container_width=True)
-
-        fig_pib_pc_country = build_country_year_filled_line(
-            country_df,
-            "pib_per_capita",
-            f"PIB Per Capita - {selected_country}",
-            lambda v: format_compact_currency(v),
-            selected_country,
-            label_mode=label_mode,
-            text_size=max(8, label_font - 1),
-        )
-        if fig_pib_pc_country is not None:
-            st.plotly_chart(fig_pib_pc_country, use_container_width=True)
-
-        fig_yoy_country = build_country_year_filled_line(
-            country_df,
-            "yoy_pib_pct",
-            f"YoY do PIB (%) - {selected_country}",
-            "{v:.2f}%",
-            selected_country,
-            label_mode=label_mode,
-            text_size=label_font,
-        )
-        if fig_yoy_country is not None:
-            st.plotly_chart(fig_yoy_country, use_container_width=True)
-
-        fig_edu_country = build_country_year_filled_line(
-            country_df,
-            "gastos_educacao",
-            f"Gastos Educacao (%) - {selected_country}",
-            "{v:.2f}%",
-            selected_country,
-            label_mode=label_mode,
-            text_size=label_font,
-        )
-        if fig_edu_country is not None:
-            st.plotly_chart(fig_edu_country, use_container_width=True)
-
-        fig_saude_country = build_country_year_filled_line(
-            country_df,
-            "gastos_saude",
-            f"Gastos Saude (%) - {selected_country}",
-            "{v:.2f}%",
-            selected_country,
-            label_mode=label_mode,
-            text_size=label_font,
-        )
-        if fig_saude_country is not None:
-            st.plotly_chart(fig_saude_country, use_container_width=True)
-
-        fig_vida_country = build_country_year_filled_line(
-            country_df,
-            "expectativa_vida",
-            f"Expectativa de Vida - {selected_country}",
-            "{v:.2f}",
-            selected_country,
-            label_mode=label_mode,
-            text_size=label_font,
-        )
-        if fig_vida_country is not None:
-            st.plotly_chart(fig_vida_country, use_container_width=True)
-
-        fig_idh_country = build_country_year_filled_line(
-            country_df,
-            "idh",
-            f"IDH - {selected_country}",
-            "{v:.3f}",
-            selected_country,
-            label_mode=label_mode,
-            text_size=label_font,
-        )
-        if fig_idh_country is not None:
-            st.plotly_chart(fig_idh_country, use_container_width=True)
-
-        fig_hab_country = build_country_year_filled_line(
-            country_df,
-            "habitantes",
-            f"Habitantes - {selected_country}",
-            lambda v: format_compact_number(v, force_million=True),
-            selected_country,
-            label_mode=label_mode,
-            text_size=label_font,
-        )
-        if fig_hab_country is not None:
-            st.plotly_chart(fig_hab_country, use_container_width=True)
+        for metric_col, title, fmt, text_size in [
+            ("pib", f"PIB - {selected_country}", lambda v: format_compact_currency(v), label_font),
+            ("pib_per_capita", f"PIB Per Capita - {selected_country}", lambda v: format_compact_currency(v), max(8, label_font - 1)),
+            ("yoy_pib_pct", f"YoY do PIB (%) - {selected_country}", "{v:.2f}%", label_font),
+            ("gastos_educacao", f"Gastos Educacao (%) - {selected_country}", "{v:.2f}%", label_font),
+            ("gastos_saude", f"Gastos Saude (%) - {selected_country}", "{v:.2f}%", label_font),
+            ("expectativa_vida", f"Expectativa de Vida - {selected_country}", "{v:.2f}", label_font),
+            ("idh", f"IDH - {selected_country}", "{v:.3f}", label_font),
+            ("habitantes", f"Habitantes - {selected_country}", lambda v: format_compact_number(v, force_million=True), label_font),
+        ]:
+            fig_country = build_country_year_filled_line(
+                country_df,
+                metric_col,
+                title,
+                fmt,
+                selected_country,
+                label_mode=label_mode,
+                text_size=text_size,
+            )
+            if fig_country is not None:
+                st.plotly_chart(fig_country, use_container_width=True)
 
 except Exception as exc:
     st.error("Falha ao carregar dados do banco.")
